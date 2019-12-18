@@ -1,23 +1,16 @@
-import sys, getopt, boto3
+import click, boto3
 
-# define arguments
-unixOpts = "a:bc"
-gnuOpts = ["eey","bee","see"]
+def start_instance(ami, type, keypair):
+    pass
 
-# read arguments
-argsList = sys.argv[1:]
-try:
-    args, vals = getopt.getopt(argsList,unixOpts,gnuOpts)
-except getopt.error as err:
-    # handling for unrecognized options
-    print (str(err))
-    sys.exit(2)
+def terminate_instance(id):
+    pass
 
-# handle arguments
-for arg, val in args:
-    if arg in ("-a", "--eey"):
-        print (("a provided with %s") % (val))
-    elif arg in ("-b", "--bee"):
-        print ("Option b provided")
-    elif arg in ("-c", "--see"):
-        print ("Option c provided")    
+@click.command()
+@click.option("-t", "--type", default="tmp", help="instance type")
+@click.argument("directory")
+def init (type, directory):
+    click.echo("Creating an instance of type " + type + ", starting program in directory " + directory)
+
+if __name__ == '__main__':
+    init()
