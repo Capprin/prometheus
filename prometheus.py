@@ -1,4 +1,4 @@
-import sys, os, click, math, boto3
+import sys, os, math, json, click, boto3
 
 # workflow:
 #    create instances. Need:
@@ -36,9 +36,10 @@ def cli():
 @click.option('-s', '--size', type=click.INT, help = 'EBS size, in GB. Highly Recommended!')
 @click.option('-t', '--type', default='t2.micro', help='instance type')
 @click.option('-a', '--ami', default='ami-08d489468314a58df', help='amazon machine image')
+@click.option('-r', '--save', help='save instance information after start', flag_value=True)
 @click.option('-p', '--persist', help='keep instance running', flag_value=True)
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True), default='.')
-def run (directory, keypair, size, ami, type, persist):
+def run (directory, keypair, size, ami, type, save, persist):
     """Creates and runs an AWS EC2 instance that runs the process stored in DIRECTORY."""
 
     try:
@@ -54,6 +55,7 @@ def run (directory, keypair, size, ami, type, persist):
         click.echo('Instance size not provided, making my best guess...')
     if size < 8:
             size = 8
+    click.echo('Using EBS volume size of %i' % (size))
 
     instance_list = None
     block_device_mappings = [
@@ -70,16 +72,38 @@ def run (directory, keypair, size, ami, type, persist):
         instance_list = ec2_resource.create_instances(BlockDeviceMappings=block_device_mappings, ImageId=ami, InstanceType=type, KeyName=keypair, MinCount=1, MaxCount=1)
     except:
         #TODO: Better error logging
-        click.echo('Failed to create ec2 instance.')
+        click.echo('Failed to create ec2 instance(s).')
         exit(1)
     else:
-        click.echo('Created ec2 instance with id ' + instance_list[0].id)
+        click.echo('Created ec2 instance(s) with id(s) ', nl=False)
+        for instance in instance_list:
+            click.echo(instance.id + ' ', nl=False)
+        click.echo('') #final newline
 
-    print(instance_list[0])
+    # block until instances are running
+    click.echo('Updating local instance information (this may take a while)')
+    for instance in instance_list:
+        instance.wait_until_running()
+        instance.reload()
 
-    #TODO: Save instance information if:
-    #   - persisting
-    #   - "save" flag is set
+    # save instance information if required
+    if save or persist:
+        click.echo('Writing instance information to ' + directory + '/instance-info.json')
+        instance_info = []
+        for instance in instance_list:
+            info = {
+                'id' : instance.id,
+                'ami' : instance.image_id,
+                'type': instance.instance_type,
+                'key-name' : instance.key_name,
+                #'launch-time' : instance.launch_time,
+                'public-dns' : instance.public_dns_name,
+                'public-ip' : instance.public_ip_address
+            }
+            instance_info.append(info)
+        out_file = open(directory + '/instance-info.json','w')
+        out_file.write(json.dumps(instance_info))
+        out_file.close()
 
     #TODO: Move directory contents into instance
 
