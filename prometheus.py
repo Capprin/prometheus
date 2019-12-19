@@ -42,7 +42,6 @@ def run (directory, keypair, size, ami, type, persist):
     """Creates and runs an AWS EC2 instance that runs the process stored in DIRECTORY."""
 
     ec2_resource = boto3.resource('ec2', region_name = 'us-west-2')
-    ec2_client = boto3.client('ec2')
 
     # estimate storage size at the directory space (better to provide size)
     # set size to 8 (minimum) if we're less than that
@@ -72,6 +71,8 @@ def run (directory, keypair, size, ami, type, persist):
     else:
         click.echo('Created ec2 instance with id ' + instance_list[0].id)
 
+    print(instance_list[0])
+
     #TODO: Save instance information if:
     #   - persisting
     #   - "save" flag is set
@@ -88,10 +89,10 @@ def run (directory, keypair, size, ami, type, persist):
     #   - only if done with the instance
 
     # terminate ec2 instance if we're supposed to
-    instance_ids = [instance.id for instance in instance_list]
     if not persist:
         try:
-            ec2_client.terminate_instances(InstanceIds = instance_ids)
+            for instance in instance_list:
+                instance.terminate()
         except:
             #TODO: Handle this better. Maybe wait?
             click.echo('Failed to terminate ec2 instance')
