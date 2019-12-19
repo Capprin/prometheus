@@ -41,7 +41,11 @@ def cli():
 def run (directory, keypair, size, ami, type, persist):
     """Creates and runs an AWS EC2 instance that runs the process stored in DIRECTORY."""
 
-    ec2_resource = boto3.resource('ec2', region_name = 'us-west-2')
+    try:
+        ec2_resource = boto3.resource('ec2', region_name = 'us-west-2')
+    except:
+        click.echo('Failed to create EC2 resource.')
+        exit(1)
 
     # estimate storage size at the directory space (better to provide size)
     # set size to 8 (minimum) if we're less than that
@@ -104,7 +108,20 @@ def run (directory, keypair, size, ami, type, persist):
 
     click.echo('Done.')
 
-#TODO: write stop command
+
+# stops instances with provided ids
+@cli.command()
+@click.argument('instance_id', nargs=-1)
+def stop(instance_id):
+    """Stops running instances with provided INSTANCE_ID's."""
+    click.echo('Terminating instance(s)...')
+    try:
+        ec2 = boto3.client('ec2')
+        ec2.terminate_instances(InstanceIds = list(instance_id))
+    except:
+        click.echo('Failed to terminate instances.')
+    click.echo('Done.')
+
 #TODO: figure out reference
 #   - instance types overview/reference?
 #   - brief ami reference?
