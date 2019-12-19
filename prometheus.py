@@ -103,6 +103,48 @@ def run (directory, keypair, size, ami, type, persist):
 
     click.echo('Done.')
 
+@cli.group()
+def reference():
+    """Concise reference for optional provided parameters. More information will always be available at aws.amazon.com/ec2/"""
+    pass
+
+@reference.command()
+def type():
+    """
+    Reflects focus of hardware being used by each instance. In general:
+    \b
+    General Purpose: Use T3, M5
+    Compute Focused: Use C5
+    Memory Focused: Use R5
+    More Specialized: See official documentation.
+
+    Each type is sized: nano, micro, small, medium, large, xlarge, metal, etc.
+    The size corresponds to machine capability of the instance.
+    \b
+    Examples:
+    t2.micro (default for this platform)
+    m5.large
+    c5.xlarge
+    r5.metal
+
+    Official documentation available at https://aws.amazon.com/ec2/instance-types/.
+    """
+    pass
+
+@reference.command()
+def ami():
+    """
+    \b
+    Starting image for instance. Some example default available AMI's:
+    Amazon Linux: ami-08d489468314a58df (default for this platform)
+    Red Hat: ami-087c2c50437d0b80d
+    Ubuntu Server: ami-06d51e91cea0dac8d
+    Windows Server: ami-0f3f4855746899521
+
+    Specific AMI's are available for each use case, and should be explored in the aws console.
+    """
+    pass
+
 #TODO: write stop command
 #TODO: figure out reference
 #   - instance types overview/reference?
