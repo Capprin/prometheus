@@ -1,4 +1,4 @@
-import sys, os, math, json, click, boto3
+import sys, os, math, json, zipfile, click, boto3, paramiko
 
 # workflow:
 #    create instances. Need:
@@ -12,17 +12,20 @@ import sys, os, math, json, click, boto3
 #    download program data
 #    terminate instance
 
+#TODO: Figure out how to do more robust permissions checks (with dryrun maybe)
+
 # computes directory size, in bytes. Probably shouldn't be used.
-def get_size(start_path = '.'):
-    total_size = 0
+def get_sub_items(start_path = '.'):
+    sub_items = []
     for path, dirs, files in os.walk(start_path):
         for f in files:
             fp = os.path.join(path, f)
             # skip if it is symbolic link
             if not os.path.islink(fp):
-                total_size += os.path.getsize(fp)
+                sub_items.append(fp)
 
-    return total_size
+    return sub_items
+
 
 # click definitions
 @click.group()
@@ -32,30 +35,84 @@ def cli():
 
 #TODO: Make these options choices (how should I do this so they're not super insane?)
 @cli.command()
-@click.option('-k', '--keypair', required=True, help='ssh key used to access instance')
+@click.option('-k', '--key-name', 'keypair', required=True, help='amazon keypair used to access instance')
+@click.option('-l', '--key-path', 'keypath', required=True, type=click.Path(exists=True, file_okay=True, dir_okay=False), help='location of ssh key')
 @click.option('-s', '--size', type=click.INT, help = 'EBS size, in GB. Highly Recommended!')
 @click.option('-t', '--type', default='t2.micro', help='instance type')
 @click.option('-a', '--ami', default='ami-08d489468314a58df', help='amazon machine image')
+@click.option('-g', '--security-group-name', 'securitygroup', help='provided security group. MUST allow ssh from this machine.')
 @click.option('-r', '--save', help='save instance information after start', flag_value=True)
 @click.option('-p', '--persist', help='keep instance running', flag_value=True)
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True), default='.')
-def run (directory, keypair, size, ami, type, save, persist):
+def run (directory, keypair, keypath, size, ami, securitygroup, type, save, persist):
     """Creates and runs an AWS EC2 instance that runs the process stored in DIRECTORY."""
 
+    # create ec2 resource; main workhorse
     try:
         ec2_resource = boto3.resource('ec2', region_name = 'us-west-2')
     except:
         click.echo('Failed to create EC2 resource.')
         exit(1)
 
+    # security group management
+    group_id = None
+    try:
+        security_groups = ec2_resource.security_groups.all()
+    except:
+        click.echo('Failed to read existing security groups.')
+        exit(1)
+    # generate security group if we're missing one
+    if securitygroup is None:
+        click.echo('No security group provided.')
+        # see if we've made one before
+        for group in security_groups:
+            if group.group_name == 'prometheus':
+                group_id = group.group_id
+                click.echo('Using existing prometheus security group')
+                break
+        # if we still don't have one, make one
+        if group_id is None:
+            click.echo('Creating security group for prometheus')
+            try:
+                group = ec2_resource.create_security_group(
+                    GroupName='prometheus', 
+                    Description='Security group created automatically for prometheus CLI'
+                )
+                ipv4 = click.prompt('Provide your external IPv4 address') + '/32'
+                # allow ingresses we need
+                group.authorize_ingress(CidrIp=ipv4, FromPort=22, ToPort=22, IpProtocol='tcp')
+                group_id = group.group_id
+            except:
+                click.echo('Failed to create a new security group.')
+                exit(1)
+            else:
+                click.echo('Successfully created prometheus security group')
+    else:
+        # finding provided security group
+        for group in security_groups:
+            if group.group_name == securitygroup:
+                click.echo('Using provided security group: ' + securitygroup)
+                group_id = group.group_id
+                break
+        # if we still don't have one, exit
+        if group_id is None:
+            click.echo('Provided security group ' + securitygroup + ' does not exist')
+            exit(1)
+
+    #TODO: Should we do the above for keys?
+
     # estimate storage size at the directory space (better to provide size)
     # set size to 8 (minimum) if we're less than that
     if size is None:
-        size = math.ceil(get_size(directory)/1000000000)
+        files = get_sub_items(directory)
+        total = 0
+        for f in files:
+            total += os.path.getsize(f)
+        size = math.ceil(total/1000000000)
         click.echo('Instance size not provided, making my best guess...')
     if size < 8:
             size = 8
-    click.echo('Using EBS volume size of %i' % (size))
+    click.echo('Using EBS volume size of %igb' % (size))
 
     instance_list = None
     block_device_mappings = [
@@ -69,7 +126,15 @@ def run (directory, keypair, size, ami, type, save, persist):
 
     # create ec2 instance
     try:
-        instance_list = ec2_resource.create_instances(BlockDeviceMappings=block_device_mappings, ImageId=ami, InstanceType=type, KeyName=keypair, MinCount=1, MaxCount=1)
+        instance_list = ec2_resource.create_instances(
+            BlockDeviceMappings=block_device_mappings, 
+            SecurityGroupIds=[group_id],
+            ImageId=ami, 
+            InstanceType=type, 
+            KeyName=keypair, 
+            MinCount=1, 
+            MaxCount=1
+        )
     except:
         #TODO: Better error logging
         click.echo('Failed to create ec2 instance(s).')
@@ -105,7 +170,46 @@ def run (directory, keypair, size, ami, type, save, persist):
         out_file.write(json.dumps(instance_info))
         out_file.close()
 
-    #TODO: Move directory contents into instance
+    # for now, using one instance
+    instance = instance_list[0]
+
+    # zip working directory
+    click.echo("Compressing working directory")
+    files = get_sub_items(directory) #TODO: Decide if we should just do this once
+    zip_file = zipfile.ZipFile('prometheus.zip','w') #this creates a file in the same folder as prometheus (not desired)
+    with zip_file:
+        for f in files:
+            zip_file.write(f)
+        zip_file.close()
+
+    # set up ssh
+    key_pass = None
+    if click.confirm('Is the private key password protected?'):
+        key_pass = click.prompt('Enter your password: ', hide_input=True)
+    key = paramiko.RSAKey.from_private_key_file(keypath, key_pass)
+    
+    click.echo('Connecting to instance with id ' + instance.id + '...')
+    ssh_client = paramiko.SSHClient()
+    #try:
+    ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy) #just adding unknown host for now
+    ssh_client.connect(instance.public_dns_name, username='ec2-user', passphrase=key_pass, pkey=key, timeout=5)
+    #except:
+    #    click.echo('Failed to connect to instance.')
+    #    exit(1)
+    #else:
+    #    click.echo('Connected successfully.')
+    
+    # move directory contents into instance
+    click.echo('Copying working directory onto instance')
+    #try:
+    sftp_client = ssh_client.open_sftp()
+    sftp_client.put(os.getcwd() + '\prometheus.zip', '~/prometheus.zip') #TODO: figure out slash differences for windows
+    #except:
+    #    click.echo('Failed to copy working directory')
+    
+
+
+
 
     #TODO: Start main process
     #   - wait until exit (normally):
@@ -116,6 +220,7 @@ def run (directory, keypair, size, ami, type, save, persist):
     #TODO: Move directory contents from instance
     #   - only if done with the instance
 
+    #TODO: Better behavior than exit if we've already created the instance (terminate it)
     # terminate ec2 instance if we're supposed to
     if not persist:
         try:
