@@ -33,18 +33,17 @@ def cli():
     """Creates EC2 instances to run programs in the cloud."""
     pass
 
-#TODO: Make these options choices (how should I do this so they're not super insane?)
 @cli.command()
 @click.option('-k', '--key-name', 'keypair', required=True, help='amazon keypair used to access instance')
-@click.option('-l', '--key-path', 'keypath', required=True, type=click.Path(exists=True, file_okay=True, dir_okay=False), help='location of ssh key')
 @click.option('-s', '--size', type=click.INT, help = 'EBS size, in GB. Highly Recommended!')
 @click.option('-t', '--type', default='t2.micro', help='instance type')
 @click.option('-a', '--ami', default='ami-08d489468314a58df', help='amazon machine image')
 @click.option('-g', '--security-group-name', 'securitygroup', help='provided security group. MUST allow ssh from this machine.')
+@click.option('-u' '--start-file', 'startfile', help='user data file to run on start. Defaults to "start.sh"')
 @click.option('-r', '--save', help='save instance information after start', flag_value=True)
 @click.option('-p', '--persist', help='keep instance running', flag_value=True)
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True), default='.')
-def run (directory, keypair, keypath, size, ami, securitygroup, type, save, persist):
+def run (directory, keypair, size, ami, securitygroup, type, startfile, save, persist):
     """Creates and runs an AWS EC2 instance that runs the process stored in DIRECTORY."""
 
     # create ec2 resource; main workhorse
@@ -124,6 +123,19 @@ def run (directory, keypair, keypath, size, ami, securitygroup, type, save, pers
         }
     ]
 
+    # load user data
+    userdata = None
+    if startfile is None:
+        startfile = 'start.sh'
+    try:
+        in_file = open(directory + '/' + startfile,'r')
+        userdata = in_file.read()
+        in_file.close()
+    except:
+        click.echo('Failed to open ' + startfile + '. Does it exist?')
+        exit(1)
+
+
     # create ec2 instance
     try:
         instance_list = ec2_resource.create_instances(
@@ -133,7 +145,8 @@ def run (directory, keypair, keypath, size, ami, securitygroup, type, save, pers
             InstanceType=type, 
             KeyName=keypair, 
             MinCount=1, 
-            MaxCount=1
+            MaxCount=1,
+            UserData=userdata
         )
     except:
         #TODO: Better error logging
