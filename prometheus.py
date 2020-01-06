@@ -222,17 +222,49 @@ def run (directory, keypair, size, ami, securitygroup, type, startfile, save, pe
     click.echo('Done.')
 
 
+# restarts stopped ec2 instances
+@cli.command()
+@click.argument('instance_id', nargs=-1)
+def restart(instance_id):
+    """Restarts stopped instances with provided INSTANCE_ID's"""
+    click.echo('Restarting instance(s)...')
+    try:
+        ec2 = boto3.client('ec2')
+        ec2.start_instances(InstanceIds = list(instance_id))
+    except:
+        click.echo('Failed to restart instances.')
+    else:
+        click.echo('Start command sent to aws successfully.')
+    click.echo('Done.')
+
 # stops instances with provided ids
 @cli.command()
 @click.argument('instance_id', nargs=-1)
-def stop(instance_id):
-    """Stops running instances with provided INSTANCE_ID's."""
+def stop (instance_id):
+    """Stops running instances with provided INSTANCE_ID's"""
+    click.echo('Stopping instance(s)...')
+    try:
+        ec2 = boto3.client('ec2')
+        ec2.stop_instances(InstanceIds = list(instance_id))
+    except:
+        click.echo('Failed to stop instances.')
+    else:
+        click.echo('Stop command sent to aws successfully.')
+    click.echo('Done.')
+
+# terminates instances with provided ids
+@cli.command()
+@click.argument('instance_id', nargs=-1)
+def terminate(instance_id):
+    """Terminates running instances with provided INSTANCE_ID's."""
     click.echo('Terminating instance(s)...')
     try:
         ec2 = boto3.client('ec2')
         ec2.terminate_instances(InstanceIds = list(instance_id))
     except:
         click.echo('Failed to terminate instances.')
+    else:
+        click.echo('Terminate command sent to aws successfully.')
     click.echo('Done.')
 
 #TODO: figure out reference
