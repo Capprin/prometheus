@@ -1,4 +1,4 @@
-import sys, os, math, json, zipfile, click, boto3, paramiko
+import sys, os, math, json, zipfile, click, boto3
 
 # workflow:
 #    create instances. Need:
@@ -174,42 +174,13 @@ def run (directory, keypair, keypath, size, ami, securitygroup, type, save, pers
     instance = instance_list[0]
 
     # zip working directory
-    click.echo("Compressing working directory")
-    files = get_sub_items(directory) #TODO: Decide if we should just do this once
-    zip_file = zipfile.ZipFile('prometheus.zip','w') #this creates a file in the same folder as prometheus (not desired)
-    with zip_file:
-        for f in files:
-            zip_file.write(f)
-        zip_file.close()
-
-    # set up ssh
-    key_pass = None
-    if click.confirm('Is the private key password protected?'):
-        key_pass = click.prompt('Enter your password: ', hide_input=True)
-    key = paramiko.RSAKey.from_private_key_file(keypath, key_pass)
-    
-    click.echo('Connecting to instance with id ' + instance.id + '...')
-    ssh_client = paramiko.SSHClient()
-    #try:
-    ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy) #just adding unknown host for now
-    ssh_client.connect(instance.public_dns_name, username='ec2-user', passphrase=key_pass, pkey=key, timeout=5)
-    #except:
-    #    click.echo('Failed to connect to instance.')
-    #    exit(1)
-    #else:
-    #    click.echo('Connected successfully.')
-    
-    # move directory contents into instance
-    click.echo('Copying working directory onto instance')
-    #try:
-    sftp_client = ssh_client.open_sftp()
-    sftp_client.put(os.getcwd() + '\prometheus.zip', '~/prometheus.zip') #TODO: figure out slash differences for windows
-    #except:
-    #    click.echo('Failed to copy working directory')
-    
-
-
-
+    #click.echo("Compressing working directory")
+    #files = get_sub_items(directory) #TODO: Decide if we should just do this once
+    #zip_file = zipfile.ZipFile('prometheus.zip','w') #this creates a file in the same folder as prometheus (not desired)
+    #with zip_file:
+    #    for f in files:
+    #        zip_file.write(f)
+    #    zip_file.close()
 
     #TODO: Start main process
     #   - wait until exit (normally):
