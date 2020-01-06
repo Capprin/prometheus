@@ -1,4 +1,4 @@
-import sys, os, math, json, zipfile, click, boto3
+import sys, os, math, json, click, boto3
 
 # PROMETHEUS
 # instance-manager: only for managing ec2 instances
